@@ -1,0 +1,102 @@
+import streamlit as st
+import pandas as pd
+import matplotlib.pyplot as plt
+
+st.set_page_config(page_title="Laser Cutting Waste Calculator", layout="wide")
+
+st.title("🔧 Laser Cutting Waste Calculator")
+
+# -----------------------
+# File Upload
+# -----------------------
+uploaded_file = st.file_uploader(
+    "Upload CSV or Excel file with parts data",
+    type=["csv", "xlsx"]
+)
+
+if uploaded_file:
+    if uploaded_file.name.endswith(".csv"):
+        df = pd.read_csv(uploaded_file)
+    else:
+        df = pd.read_excel(uploaded_file)
+
+    st.subheader("📄 Uploaded Data")
+    st.dataframe(df)
+
+    required_cols = {"part_length", "part_width", "quantity"}
+    if not required_cols.issubset(df.columns):
+        st.error("File must contain columns: part_length, part_width, quantity")
+        st.stop()
+
+    # -----------------------
+    # Material Inputs
+    # -----------------------
+    st.subheader("📐 Material Parameters")
+
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        sheet_length = st.number_input("Sheet Length (mm)", value=3000)
+        sheet_width = st.number_input("Sheet Width (mm)", value=1500)
+
+    with col2:
+        material_type = st.text_input("Material Type", value="Steel")
+
+    with col3:
+        price_mode = st.selectbox("Material Price Type", ["Per Sheet", "Per m²"])
+
+    if price_mode == "Per Sheet":
+        material_price = st.number_input("Price per Sheet (€)", value=100.0)
+    else:
+        material_price = st.number_input("Price per m² (€)", value=20.0)
+
+    # -----------------------
+    # Calculations
+    # -----------------------
+    st.subheader("📊 Calculations")
+
+    sheet_area = sheet_length * sheet_width  # mm²
+
+    df["part_area"] = df["part_length"] * df["part_width"]
+    df["total_part_area"] = df["part_area"] * df["quantity"]
+
+    used_area = df["total_part_area"].sum()
+    waste_area = sheet_area - used_area
+
+    if waste_area < 0:
+        st.warning("⚠ Parts exceed sheet area! Nesting efficiency not considered.")
+        waste_area = 0
+
+    used_percent = (used_area / sheet_area) * 100
+    waste_percent = 100 - used_percent
+
+    if price_mode == "Per Sheet":
+        waste_cost = (waste_percent / 100) * material_price
+    else:
+        sheet_area_m2 = sheet_area / 1_000_000
+        waste_cost = (waste_area / 1_000_000) * material_price
+
+    # -----------------------
+    # Results
+    # -----------------------
+    col1, col2, col3, col4 = st.columns(4)
+
+    col1.metric("Material Type", material_type)
+    col2.metric("Used Area (%)", f"{used_percent:.2f}%")
+    col3.metric("Waste (%)", f"{waste_percent:.2f}%")
+    col4.metric("Waste Cost (€)", f"{waste_cost:.2f}")
+
+    # -----------------------
+    # Visualization
+    # -----------------------
+    st.subheader("📈 Material Usage Visualization")
+
+    fig, ax = plt.subplots()
+    ax.bar(["Used Material", "Waste"], [used_area, waste_area])
+    ax.set_ylabel("Area (mm²)")
+    ax.set_title("Material Usage vs Waste")
+
+    st.pyplot(fig)
+
+else:
+    st.info("⬆ Upload a CSV or Excel file to begin.")
