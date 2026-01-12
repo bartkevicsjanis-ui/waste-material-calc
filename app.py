@@ -48,7 +48,7 @@ UNIT_TO_METER = {
 
 st.markdown(f"""
 **Selected unit:** `{unit}`  
-All results will be shown in **square meters (m²)** and **EUR (€)**  
+Results shown in **square meters (m²)** and **EUR (€)**  
 Date format: **DD.MM.YYYY**
 """)
 
@@ -103,11 +103,50 @@ df["length_m"] = df["length"] * factor
 df["used_area_m2"] = df["used_area"] * (factor ** 2)
 
 # -------------------------------------------------
-# Calculations (m²)
+# Calculate total area
 # -------------------------------------------------
 df["total_area_m2"] = df["width_m"] * df["length_m"]
-df["waste_area_m2"] = df["total_area_m2"] - df["used_area_m2"]
 
+# -------------------------------------------------
+# ❌ VALIDATION: used area > total area
+# -------------------------------------------------
+invalid_rows = df[df["used_area_m2"] > df["total_area_m2"]].copy()
+
+if not invalid_rows.empty:
+    st.error("❌ ERROR: Used area is larger than total sheet area in the rows listed below.")
+
+    # Add Excel row numbers (row 1 = header)
+    invalid_rows["Excel Row"] = invalid_rows.index + 2
+    invalid_rows["date"] = invalid_rows["date"].dt.strftime("%d.%m.%Y")
+
+    st.markdown("### 🚨 Incorrect Rows (fix these in Excel)")
+
+    st.dataframe(
+        invalid_rows[
+            [
+                "Excel Row",
+                "date",
+                "width",
+                "length",
+                "used_area",
+                "total_area_m2",
+                "used_area_m2"
+            ]
+        ].round(4),
+        use_container_width=True
+    )
+
+    st.info(
+        "ℹ️ **Explanation:** In these rows, the used area is larger than the total "
+        "sheet area (width × length). Please correct the values in Excel and upload again."
+    )
+
+    st.stop()
+
+# -------------------------------------------------
+# Calculations (safe)
+# -------------------------------------------------
+df["waste_area_m2"] = df["total_area_m2"] - df["used_area_m2"]
 df["waste_percent"] = (df["waste_area_m2"] / df["total_area_m2"]) * 100
 df["waste_cost_eur"] = (df["waste_area_m2"] / df["total_area_m2"]) * df["price_eur"]
 
@@ -124,7 +163,7 @@ c2.metric("Waste (m²)", f"{total_waste_m2:.3f}")
 c3.metric("Money Lost (€)", f"{total_cost:.2f}")
 
 # -------------------------------------------------
-# Display table (formatted date)
+# Display results table
 # -------------------------------------------------
 st.subheader("📋 Detailed Results")
 
