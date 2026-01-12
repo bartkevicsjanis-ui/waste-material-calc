@@ -30,12 +30,26 @@ st.markdown(
 # -------------------------------------------------
 st.title("🔧 Laser Cutting Waste & Cost Calculator")
 
-st.markdown("""
-**Units used in this app:**
-- Width & Length: **millimeters (mm)**
-- Area results: **square meters (m²)**
-- Currency: **EUR (€)**
-- Date format: **DD.MM.YYYY**
+# -------------------------------------------------
+# Unit selector
+# -------------------------------------------------
+st.subheader("⚙️ Input Units")
+
+unit = st.selectbox(
+    "Select unit used in Excel file (width, length, used_area):",
+    ["mm", "cm", "m"]
+)
+
+UNIT_TO_METER = {
+    "mm": 0.001,
+    "cm": 0.01,
+    "m": 1.0
+}
+
+st.markdown(f"""
+**Selected unit:** `{unit}`  
+All results will be shown in **square meters (m²)** and **EUR (€)**  
+Date format: **DD.MM.YYYY**
 """)
 
 # -------------------------------------------------
@@ -76,22 +90,26 @@ if missing:
 # -------------------------------------------------
 df["date"] = pd.to_datetime(df["date"], errors="coerce")
 if df["date"].isna().any():
-    st.error("❌ Invalid date format detected. Use YYYY-MM-DD or Excel date.")
+    st.error("❌ Invalid date format. Use YYYY-MM-DD or Excel date.")
     st.stop()
 
 # -------------------------------------------------
-# Calculations (mm² → m²)
+# Convert units → meters / m²
 # -------------------------------------------------
-df["total_area_mm2"] = df["width"] * df["length"]
-df["used_area_mm2"] = df["used_area"]
-df["waste_area_mm2"] = df["total_area_mm2"] - df["used_area_mm2"]
+factor = UNIT_TO_METER[unit]
 
-df["total_area_m2"] = df["total_area_mm2"] / 1_000_000
-df["used_area_m2"] = df["used_area_mm2"] / 1_000_000
-df["waste_area_m2"] = df["waste_area_mm2"] / 1_000_000
+df["width_m"] = df["width"] * factor
+df["length_m"] = df["length"] * factor
+df["used_area_m2"] = df["used_area"] * (factor ** 2)
 
-df["waste_percent"] = (df["waste_area_mm2"] / df["total_area_mm2"]) * 100
-df["waste_cost_eur"] = (df["waste_area_mm2"] / df["total_area_mm2"]) * df["price_eur"]
+# -------------------------------------------------
+# Calculations (m²)
+# -------------------------------------------------
+df["total_area_m2"] = df["width_m"] * df["length_m"]
+df["waste_area_m2"] = df["total_area_m2"] - df["used_area_m2"]
+
+df["waste_percent"] = (df["waste_area_m2"] / df["total_area_m2"]) * 100
+df["waste_cost_eur"] = (df["waste_area_m2"] / df["total_area_m2"]) * df["price_eur"]
 
 # -------------------------------------------------
 # KPIs
@@ -102,11 +120,11 @@ total_cost = df["waste_cost_eur"].sum()
 
 c1, c2, c3 = st.columns(3)
 c1.metric("Waste (%)", f"{(total_waste_m2 / total_material_m2) * 100:.2f}%")
-c2.metric("Waste (m²)", f"{total_waste_m2:.2f}")
+c2.metric("Waste (m²)", f"{total_waste_m2:.3f}")
 c3.metric("Money Lost (€)", f"{total_cost:.2f}")
 
 # -------------------------------------------------
-# Display table with formatted date
+# Display table (formatted date)
 # -------------------------------------------------
 st.subheader("📋 Detailed Results")
 
@@ -134,7 +152,6 @@ st.subheader("📈 Daily Waste Cost (€)")
 
 daily = df.groupby("date")["waste_cost_eur"].sum()
 daily.index = daily.index.strftime("%d.%m.%Y")
-
 st.line_chart(daily)
 
 # -------------------------------------------------
