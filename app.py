@@ -115,7 +115,6 @@ invalid_rows = df[df["used_area_m2"] > df["total_area_m2"]].copy()
 if not invalid_rows.empty:
     st.error("❌ ERROR: Used area is larger than total sheet area in the rows listed below.")
 
-    # Add Excel row numbers (row 1 = header)
     invalid_rows["Excel Row"] = invalid_rows.index + 2
     invalid_rows["date"] = invalid_rows["date"].dt.strftime("%d.%m.%Y")
 
@@ -132,26 +131,21 @@ if not invalid_rows.empty:
                 "total_area_m2",
                 "used_area_m2"
             ]
-        ].round(4),
+        ].round(2),
         use_container_width=True
-    )
-
-    st.info(
-        "ℹ️ **Explanation:** In these rows, the used area is larger than the total "
-        "sheet area (width × length). Please correct the values in Excel and upload again."
     )
 
     st.stop()
 
 # -------------------------------------------------
-# Calculations (safe)
+# Calculations
 # -------------------------------------------------
 df["waste_area_m2"] = df["total_area_m2"] - df["used_area_m2"]
 df["waste_percent"] = (df["waste_area_m2"] / df["total_area_m2"]) * 100
 df["waste_cost_eur"] = (df["waste_area_m2"] / df["total_area_m2"]) * df["price_eur"]
 
 # -------------------------------------------------
-# KPIs
+# KPIs (1 decimal for m²)
 # -------------------------------------------------
 total_material_m2 = df["total_area_m2"].sum()
 total_waste_m2 = df["waste_area_m2"].sum()
@@ -159,11 +153,11 @@ total_cost = df["waste_cost_eur"].sum()
 
 c1, c2, c3 = st.columns(3)
 c1.metric("Waste (%)", f"{(total_waste_m2 / total_material_m2) * 100:.2f}%")
-c2.metric("Waste (m²)", f"{total_waste_m2:.3f}")
+c2.metric("Waste (m²)", f"{total_waste_m2:.1f}")
 c3.metric("Money Lost (€)", f"{total_cost:.2f}")
 
 # -------------------------------------------------
-# Display results table
+# Display results table (m² → 1 decimal)
 # -------------------------------------------------
 st.subheader("📋 Detailed Results")
 
@@ -180,7 +174,15 @@ display_cols = [
 ]
 
 st.dataframe(
-    display_df[display_cols].round(4),
+    display_df[display_cols].round(
+        {
+            "total_area_m2": 1,
+            "used_area_m2": 1,
+            "waste_area_m2": 1,
+            "waste_percent": 2,
+            "waste_cost_eur": 2,
+        }
+    ),
     use_container_width=True
 )
 
