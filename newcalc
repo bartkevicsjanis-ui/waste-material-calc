@@ -1,0 +1,73 @@
+import pandas as pd
+import matplotlib.pyplot as plt
+
+def load_file(file_path):
+    """
+    Load CSV or Excel file
+    """
+    if file_path.endswith(".csv"):
+        return pd.read_csv(file_path)
+    elif file_path.endswith(".xlsx"):
+        return pd.read_excel(file_path)
+    else:
+        raise ValueError("Unsupported file format")
+
+
+def calculate_waste(df):
+    """
+    Calculate waste area, percentage, and money loss
+    """
+    df["total_area"] = df["width"] * df["length"]
+    df["waste_area"] = df["total_area"] - df["used_area"]
+
+    df["waste_percent"] = (df["waste_area"] / df["total_area"]) * 100
+    df["waste_cost_eur"] = (df["waste_area"] / df["total_area"]) * df["price_eur"]
+
+    return df
+
+
+def summary_stats(df):
+    """
+    Print overall statistics
+    """
+    total_area = df["total_area"].sum()
+    total_waste = df["waste_area"].sum()
+    total_cost = df["waste_cost_eur"].sum()
+
+    print("===== SUMMARY =====")
+    print(f"Total material used: {total_area:.2f}")
+    print(f"Total waste area: {total_waste:.2f}")
+    print(f"Total waste percentage: {(total_waste / total_area) * 100:.2f}%")
+    print(f"Total money lost: €{total_cost:.2f}")
+
+
+def daily_waste_graph(df):
+    """
+    Plot daily waste cost
+    """
+    df["date"] = pd.to_datetime(df["date"])
+
+    daily = df.groupby("date")["waste_cost_eur"].sum()
+
+    plt.figure()
+    plt.plot(daily.index, daily.values)
+    plt.xlabel("Date")
+    plt.ylabel("Waste Cost (EUR)")
+    plt.title("Daily Laser Cutting Waste Cost")
+    plt.xticks(rotation=45)
+    plt.tight_layout()
+    plt.show()
+
+
+def main():
+    file_path = input("Enter path to CSV or Excel file: ")
+
+    df = load_file(file_path)
+    df = calculate_waste(df)
+
+    summary_stats(df)
+    daily_waste_graph(df)
+
+
+if __name__ == "__main__":
+    main()
