@@ -1,207 +1,152 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
+from io import BytesIO
 
-# -------------------------------------------------
-# Page configuration
-# -------------------------------------------------
+# =====================================================
+# PAGE CONFIG
+# =====================================================
 st.set_page_config(
-    page_title="Laser Cut Waste Calculator",
-    layout="centered"
+    page_title="Laser Cutting Waste Calculator",
+    layout="wide"
 )
 
-# -------------------------------------------------
-# Limit app width (CSS)
-# -------------------------------------------------
+# =====================================================
+# CUSTOM STYLE
+# =====================================================
 st.markdown(
     """
     <style>
+    .stApp {
+        background-color: #e6f4ea;
+        color: black;
+    }
+
     .block-container {
-        max-width: 900px;
-        padding-top: 2rem;
-        padding-bottom: 2rem;
+        max-width: 70%;
+        padding: 2rem;
+    }
+
+    section[data-testid="stFileUploader"] {
+        background-color: #3a3a3a;
+        padding: 20px;
+        border-radius: 10px;
+    }
+
+    section[data-testid="stFileUploader"] label,
+    section[data-testid="stFileUploader"] small {
+        color: white;
+        font-weight: 600;
+    }
+
+    .stDownloadButton button {
+        background-color: #2f7d32;
+        color: white;
+        border-radius: 8px;
+        font-weight: 600;
+    }
+
+    .metric-box {
+        background-color: #cfe9d6;
+        padding: 15px;
+        border-radius: 10px;
+        text-align: center;
+        font-weight: bold;
     }
     </style>
     """,
     unsafe_allow_html=True
 )
 
-# -------------------------------------------------
-# App Title
-# -------------------------------------------------
-st.title("🔧 Laser Cutting Waste & Cost Calculator")
+st.title("🛠️ Laser Cutting Waste & Cost Calculator")
 
-# -------------------------------------------------
-# Unit selector
-# -------------------------------------------------
-st.subheader("⚙️ Input Units")
+# =====================================================
+# TEMPLATE DOWNLOAD
+# =====================================================
+st.subheader("📥 Download Excel Template")
 
-unit = st.selectbox(
-    "Select unit used in Excel file (width, length, used_area):",
-    ["mm", "cm", "m"]
+template = pd.DataFrame({
+    "date": ["01.01.2026", "15.01.2026"],
+    "width": [1.0, 1.2],
+    "length": [2.0, 2.5],
+    "used_area": [1.6, 2.4],
+    "price_per_m2": [30, 28],
+})
+
+buf = BytesIO()
+with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+    template.to_excel(writer, index=False)
+
+st.download_button(
+    "⬇️ Download Excel Template",
+    buf.getvalue(),
+    "laser_cut_template.xlsx",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 )
 
-UNIT_TO_METER = {
-    "mm": 0.001,
-    "cm": 0.01,
-    "m": 1.0
+st.divider()
+st.caption("Units: meters (m), square meters (m²), EUR")
+
+# =====================================================
+# FILE UPLOAD
+# =====================================================
+file = st.file_uploader("📂 Upload CSV or Excel file", type=["csv", "xlsx"])
+if not file:
+    st.stop()
+
+# =====================================================
+# LOAD FILE (ROBUST CSV)
+# =====================================================
+if file.name.lower().endswith(".csv"):
+    df = pd.read_csv(file, sep=None, engine="python", encoding="utf-8-sig")
+else:
+    df = pd.read_excel(file)
+
+df.columns = df.columns.str.lower().str.strip()
+
+# =====================================================
+# COLUMN MAP
+# =====================================================
+def find(cols):
+    return next((c for c in cols if c in df.columns), None)
+
+col = {
+    "date": find(["date"]),
+    "width": find(["width"]),
+    "length": find(["length"]),
+    "used": find(["used_area"]),
+    "price": find(["price_per_m2", "price"]),
 }
 
-st.markdown(f"""
-**Selected unit:** `{unit}`  
-Results shown in **square meters (m²)** and **EUR (€)**  
-Date format: **DD.MM.YYYY**
-""")
-
-# -------------------------------------------------
-# Required columns
-# -------------------------------------------------
-REQUIRED_COLUMNS = {"date", "width", "length", "used_area", "price_eur"}
-
-# -------------------------------------------------
-# File upload
-# -------------------------------------------------
-uploaded_file = st.file_uploader(
-    "📂 Upload CSV or Excel file",
-    type=["csv", "xlsx"]
-)
-
-if uploaded_file is None:
-    st.info("👆 Upload a file to begin.")
+if None in col.values():
+    st.error("❌ Missing required columns")
+    st.write("Detected columns:", list(df.columns))
     st.stop()
 
-# -------------------------------------------------
-# Load data
-# -------------------------------------------------
-if uploaded_file.name.endswith(".csv"):
-    df = pd.read_csv(uploaded_file)
-else:
-    df = pd.read_excel(uploaded_file)
+# =====================================================
+# CLEAN DATA
+# =====================================================
+df[col["date"]] = pd.to_datetime(df[col["date"]], errors="coerce", dayfirst=True)
 
-# -------------------------------------------------
-# Validate columns
-# -------------------------------------------------
-missing = REQUIRED_COLUMNS - set(df.columns)
-if missing:
-    st.error(f"❌ Missing required columns: {', '.join(missing)}")
-    st.stop()
+for k in ["width", "length", "used", "price"]:
+    df[col[k]] = pd.to_numeric(df[col[k]], errors="coerce")
 
-# -------------------------------------------------
-# Convert & validate date
-# -------------------------------------------------
-df["date"] = pd.to_datetime(df["date"], errors="coerce")
-if df["date"].isna().any():
-    st.error("❌ Invalid date format. Use YYYY-MM-DD or Excel date.")
-    st.stop()
+df = df.dropna().reset_index(drop=True)
 
-# -------------------------------------------------
-# Convert units → meters / m²
-# -------------------------------------------------
-factor = UNIT_TO_METER[unit]
+# =====================================================
+# CALCULATIONS
+# =====================================================
+df["total_m2"] = df[col["width"]] * df[col["length"]]
+df["waste_m2"] = df["total_m2"] - df[col["used"]]
+df["waste_pct"] = (df["waste_m2"] / df["total_m2"]) * 100
+df["waste_eur"] = df["waste_m2"] * df[col["price"]]
 
-df["width_m"] = df["width"] * factor
-df["length_m"] = df["length"] * factor
-df["used_area_m2"] = df["used_area"] * (factor ** 2)
+df["month"] = df[col["date"]].dt.to_period("M").astype(str)
 
-# -------------------------------------------------
-# Calculate total area
-# -------------------------------------------------
-df["total_area_m2"] = df["width_m"] * df["length_m"]
-
-# -------------------------------------------------
-# ❌ VALIDATION: used area > total area
-# -------------------------------------------------
-invalid_rows = df[df["used_area_m2"] > df["total_area_m2"]].copy()
-
-if not invalid_rows.empty:
-    st.error("❌ ERROR: Used area is larger than total sheet area in the rows listed below.")
-
-    invalid_rows["Excel Row"] = invalid_rows.index + 2
-    invalid_rows["date"] = invalid_rows["date"].dt.strftime("%d.%m.%Y")
-
-    st.markdown("### 🚨 Incorrect Rows (fix these in Excel)")
-
-    st.dataframe(
-        invalid_rows[
-            [
-                "Excel Row",
-                "date",
-                "width",
-                "length",
-                "used_area",
-                "total_area_m2",
-                "used_area_m2"
-            ]
-        ].round(2),
-        use_container_width=True
-    )
-
-    st.stop()
-
-# -------------------------------------------------
-# Calculations
-# -------------------------------------------------
-df["waste_area_m2"] = df["total_area_m2"] - df["used_area_m2"]
-df["waste_percent"] = (df["waste_area_m2"] / df["total_area_m2"]) * 100
-df["waste_cost_eur"] = (df["waste_area_m2"] / df["total_area_m2"]) * df["price_eur"]
-
-# -------------------------------------------------
-# KPIs (1 decimal for m²)
-# -------------------------------------------------
-total_material_m2 = df["total_area_m2"].sum()
-total_waste_m2 = df["waste_area_m2"].sum()
-total_cost = df["waste_cost_eur"].sum()
+# =====================================================
+# KPI SUMMARY
+# =====================================================
+st.subheader("📌 Summary")
 
 c1, c2, c3 = st.columns(3)
-c1.metric("Waste (%)", f"{(total_waste_m2 / total_material_m2) * 100:.2f}%")
-c2.metric("Waste (m²)", f"{total_waste_m2:.1f}")
-c3.metric("Money Lost (€)", f"{total_cost:.2f}")
-
-# -------------------------------------------------
-# Display results table (m² → 1 decimal)
-# -------------------------------------------------
-st.subheader("📋 Detailed Results")
-
-display_df = df.copy()
-display_df["date"] = display_df["date"].dt.strftime("%d.%m.%Y")
-
-display_cols = [
-    "date",
-    "total_area_m2",
-    "used_area_m2",
-    "waste_area_m2",
-    "waste_percent",
-    "waste_cost_eur"
-]
-
-st.dataframe(
-    display_df[display_cols].round(
-        {
-            "total_area_m2": 1,
-            "used_area_m2": 1,
-            "waste_area_m2": 1,
-            "waste_percent": 2,
-            "waste_cost_eur": 2,
-        }
-    ),
-    use_container_width=True
-)
-
-# -------------------------------------------------
-# Daily waste chart
-# -------------------------------------------------
-st.subheader("📈 Daily Waste Cost (€)")
-
-daily = df.groupby("date")["waste_cost_eur"].sum()
-daily.index = daily.index.strftime("%d.%m.%Y")
-st.line_chart(daily)
-
-# -------------------------------------------------
-# Download results
-# -------------------------------------------------
-csv = df.to_csv(index=False).encode("utf-8")
-st.download_button(
-    "⬇️ Download Full Results as CSV",
-    csv,
-    "laser_cut_waste_results.csv",
-    "text/csv"
-)
+c1.markdown(f"<div class='metric-box'>Total waste<br>{df['waste_m2'].sum():.1_]()
