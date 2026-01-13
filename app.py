@@ -144,9 +144,77 @@ df["waste_eur"] = df["waste_m2"] * df[col["price"]]
 df["month"] = df[col["date"]].dt.to_period("M").astype(str)
 
 # =====================================================
-# KPI SUMMARY
+# KPI SUMMARY (FIXED)
 # =====================================================
 st.subheader("📌 Summary")
 
 c1, c2, c3 = st.columns(3)
-c1.markdown(f"<div class='metric-box'>Total waste<br>{df['waste_m2'].sum():.1_]()
+
+c1.markdown(
+    f"<div class='metric-box'>Total waste<br>{df['waste_m2'].sum():.1f} m²</div>",
+    unsafe_allow_html=True
+)
+
+c2.markdown(
+    f"<div class='metric-box'>Total loss<br>€ {df['waste_eur'].sum():.2f}</div>",
+    unsafe_allow_html=True
+)
+
+c3.markdown(
+    f"<div class='metric-box'>Avg waste<br>{df['waste_pct'].mean():.1f} %</div>",
+    unsafe_allow_html=True
+)
+
+# =====================================================
+# DETAILED TABLE
+# =====================================================
+st.subheader("📊 Detailed Results")
+
+result = pd.DataFrame({
+    "date": df[col["date"]].dt.strftime("%d.%m.%Y"),
+    "total m²": df["total_m2"].round(1),
+    "used m²": df[col["used"]].round(1),
+    "waste m²": df["waste_m2"].round(1),
+    "waste %": df["waste_pct"].round(1),
+    "waste €": df["waste_eur"].round(2),
+})
+
+st.dataframe(result, height=350, use_container_width=True)
+
+# =====================================================
+# EXPORT RESULTS
+# =====================================================
+out = BytesIO()
+with pd.ExcelWriter(out, engine="openpyxl") as writer:
+    result.to_excel(writer, index=False)
+
+st.download_button(
+    "📤 Download Results (Excel)",
+    out.getvalue(),
+    "laser_waste_results.xlsx",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+)
+
+# =====================================================
+# MONTHLY SUMMARY
+# =====================================================
+st.subheader("📅 Monthly Summary")
+
+monthly = df.groupby("month").agg(
+    total_m2=("total_m2", "sum"),
+    used_m2=(col["used"], "sum"),
+    waste_m2=("waste_m2", "sum"),
+    avg_waste_pct=("waste_pct", "mean"),
+    waste_eur=("waste_eur", "sum"),
+).round(2)
+
+st.dataframe(monthly, use_container_width=True)
+
+# =====================================================
+# CHARTS
+# =====================================================
+st.subheader("📈 Waste Area by Day")
+st.line_chart(result.set_index("date")["waste m²"])
+
+st.subheader("📊 Monthly Waste (m²)")
+st.bar_chart(monthly["waste_m2"])
